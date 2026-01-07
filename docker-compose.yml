@@ -1,15 +1,44 @@
+version: "3.9"
+
 services:
   app:
+    image: ${DOCKER_IMAGE:-fastapi-app:latest}
     build: .
     ports:
-      - "8000:8000"
-    restart: always
+      - target: 8000
+        published: 8080
+        protocol: tcp
+        mode: ingress
     environment:
       - PYTHONUNBUFFERED=1
+      - TZ=Europe/Moscow
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     deploy:
       replicas: 3
-      restart_policy:
-        condition: on-failure
+      placement:
+        constraints:
+          - "node.role == worker"
       update_config:
         parallelism: 1
+        order: start-first
+        failure_action: rollback
         delay: 10s
+      rollback_config:
+        parallelism: 1
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+    secrets:
+      - app_secret
+
+secrets:
+  app_secret:
+    external: true

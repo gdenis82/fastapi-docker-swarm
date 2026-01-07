@@ -2,8 +2,7 @@ __pycache__
 .git
 .idea
 .venv
-uv.lock
-pyproject.toml
 .gitignore
 Readme.md
 test_main.http
+inventory.json
