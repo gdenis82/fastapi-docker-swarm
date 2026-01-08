@@ -1,3 +1,4 @@
+import os
 from fastapi import FastAPI
 
 app = FastAPI()
@@ -11,3 +12,11 @@ async def root():
 @app.get("/hello/{name}")
 async def say_hello(name: str):
     return {"message": f"Hello {name}"}
+
+
+@app.get("/node")
+async def get_node():
+    return {
+        "node": os.getenv("HOSTNAME", "unknown"),
+        "message": "This request was handled by a Swarm task"
+    }
