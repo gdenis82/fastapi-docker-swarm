@@ -34,17 +34,32 @@ def run_ssh(host_config, command, input_data=None):
 
 def setup_firewall(host_config, is_manager=False):
     print(f" Настройка Firewall на {host_config['ip']}...")
-    ports = ["2376/tcp", "7946/tcp", "7946/udp", "4789/udp", "8080/tcp"]
-    if is_manager:
-        ports.append("2377/tcp")
-        ports.append("9000/tcp") # Для Portainer HTTP
-        ports.append("9443/tcp") # Для Portainer HTTPS
-        ports.append("5000/tcp") # Для Docker Registry
     
-    commands = []
-    for port in ports:
-        commands.append(f"sudo firewall-cmd --add-port={port} --permanent")
-    commands.append("sudo firewall-cmd --reload")
+    # Порты для Swarm и сервисов
+    tcp_ports = ["22", "2376", "2377", "7946", "80", "443", "8080", "9000", "9443", "5000"]
+    udp_ports = ["7946", "4789"]
+    
+    # Мы попробуем использовать и ufw (если есть), и iptables напрямую для надежности
+    commands = [
+        "sudo ufw allow 22/tcp", # Всегда разрешаем SSH первым
+    ]
+    
+    # 1. Попытка через ufw
+    for p in tcp_ports:
+        commands.append(f"sudo ufw allow {p}/tcp")
+    for p in udp_ports:
+        commands.append(f"sudo ufw allow {p}/udp")
+    
+    # 2. Попытка через iptables (на случай если ufw выключен или не установлен)
+    for p in tcp_ports:
+        commands.append(f"sudo iptables -A INPUT -p tcp --dport {p} -j ACCEPT || true")
+    for p in udp_ports:
+        commands.append(f"sudo iptables -A INPUT -p udp --dport {p} -j ACCEPT || true")
+    
+    # 3. Специфично для Beget/Ubuntu - открываем протокол 50 (ESP) и 51 (AH) если нужно, 
+    # но для Swarm обычно достаточно UDP 4789.
+    
+    # Перезапуск docker после настройки сети часто помогает инициализировать overlay правильно
     commands.append("sudo systemctl restart docker")
     
     run_ssh(host_config, " && ".join(commands))
@@ -122,11 +137,16 @@ def setup_insecure_registry(host_config, registry_ip):
         print(f" Registry {registry_ip} уже в списке на {host_config['ip']}")
 
 def main():
-    if not os.path.exists("inventory.json"):
-        print("Ошибка: inventory.json не найден")
+    # Поиск inventory.json в текущей директории или в директории скрипта
+    inventory_path = "inventory.json"
+    if not os.path.exists(inventory_path):
+        inventory_path = os.path.join(os.path.dirname(__file__), "inventory.json")
+        
+    if not os.path.exists(inventory_path):
+        print(f"Ошибка: inventory.json не найден (проверено в . и {os.path.dirname(__file__)})")
         sys.exit(1)
         
-    with open("inventory.json", "r") as f:
+    with open(inventory_path, "r") as f:
         config = json.load(f)
     
     manager = config["manager"]
@@ -202,91 +222,47 @@ def main():
         hostname = run_ssh(worker, "hostname")
         run_ssh(manager, f"docker node update --label-add type=worker {hostname}")
         
-    # 9. Создание секретов
-    print("\n--- Шаг 7: Создание секретов ---")
-    secret_name = "app_secret"
-    exists = run_ssh(manager, f"docker secret ls --filter name={secret_name} -q")
-    if not exists:
-        # Используем stdin для безопасности (не отображается в ps и истории)
-        run_ssh(manager, f"docker secret create {secret_name} -", input_data=config['app_secret'])
-        print(f"Секрет {secret_name} создан")
+    # 9. Создание сети
+    print("\n--- Шаг 7: Создание сети ---")
+    check_net_cmd = "docker network ls --filter name=app_network -q"
+    net_exists = run_ssh(manager, check_net_cmd)
+    
+    if not net_exists:
+        print("Создание сети app_network...")
+        run_ssh(manager, "docker network create --driver overlay app_network")
     else:
-        print(f"Секрет {secret_name} уже существует")
-        
-    # 10. Сборка и Push
-    print("\n--- Шаг 8: Сборка и Push образа ---")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    image_base = f"{registry}/fastapi-app"
-    image_tag = f"{image_base}:{timestamp}"
-    
-    print(f"Сборка образа: {image_tag}")
-    subprocess.run(["docker", "build", "-t", image_tag, "-t", f"{image_base}:latest", "."], check=True)
-    
-    try:
-        print(f"Push образа: {image_tag}")
-        subprocess.run(["docker", "push", image_tag], check=True)
-        subprocess.run(["docker", "push", f"{image_base}:latest"], check=True)
-    except subprocess.CalledProcessError:
-        print("\n" + "!"*60)
-        print("ОШИБКА: Не удалось отправить образ (docker push).")
-        print(f"Скорее всего, ваш локальный Docker не доверяет реестру {registry}")
-        print("\nДля исправления:")
-        print("1. Откройте настройки Docker Desktop (Settings -> Docker Engine)")
-        print(f"2. Добавьте в секцию 'insecure-registries' адрес: \"{registry}\"")
-        print("   Пример:")
-        print("   {")
-        print(f"     \"insecure-registries\": [\"{registry}\"],")
-        print("     \"builder\": { \"gc\": { \"defaultKeepStorage\": \"20GB\", \"enabled\": true } }")
-        print("   }")
-        print("3. Нажмите 'Apply & Restart'")
-        print("4. Запустите скрипт снова.")
-        print("!"*60 + "\n")
-        sys.exit(1)
-    
-    # 9. Деплой стека
-    print("\n--- Шаг 8: Деплой стека ---")
-    # Передаем чек-лист на менеджер
-    with open("post-deploy-checklist.sh", "r") as f:
-        checklist_content = f.read()
-    run_ssh(manager, "cat > /root/post-deploy-checklist.sh", input_data=checklist_content)
-    run_ssh(manager, "chmod +x /root/post-deploy-checklist.sh")
+        print("Сеть app_network уже существует")
 
-    # Копируем compose файл на менеджер (или используем stdin)
-    # Для простоты передадим содержимое через пайп
-    with open("docker-compose.yml", "r") as f:
-        compose_content = f.read()
+    # 10. Деплой инфраструктуры
+    print("\n--- Шаг 8: Деплой инфраструктуры ---")
     
-    # Заменяем переменную в compose если нужно
-    remote_compose_path = "/tmp/docker-compose.yml"
-    # Используем <<'EOF' (с кавычками), чтобы переменные внутри файла не раскрывались шеллом раньше времени
-    run_ssh(manager, f"cat <<'EOF' > {remote_compose_path}\n{compose_content}\nEOF")
+    deploy_file = "deploy/infrastructure.yml"
+    if not os.path.exists(deploy_file):
+        # Если запускаем из папки infrastructure
+        deploy_file = os.path.join(os.path.dirname(__file__), "..", "deploy", "infrastructure.yml")
+
+    if not os.path.exists(deploy_file):
+        print(f"Ошибка: {deploy_file} не найден")
+        sys.exit(1)
+
+    with open(deploy_file, "r") as f:
+        infra_compose = f.read()
     
-    deploy_cmd = f"export DOCKER_IMAGE={image_tag} && docker stack deploy --with-registry-auth -c {remote_compose_path} {stack_name}"
-    run_ssh(manager, deploy_cmd)
+    remote_infra_path = "/tmp/infrastructure.yml"
+    run_ssh(manager, f"cat <<'EOF' > {remote_infra_path}\n{infra_compose}\nEOF")
     
-    # 10. Ожидание и проверка здоровья
-    print("\n--- Шаг 8.1: Проверка статуса деплоя ---")
-    service_name = f"{stack_name}_app"
-    max_retries = 20
-    for i in range(max_retries):
-        status_cmd = f"docker service ps {service_name} --filter 'desired-state=running' --format '{{{{.CurrentState}}}}'"
-        states = run_ssh(manager, status_cmd)
-        
-        if states:
-            running_count = states.count("Running")
-            print(f"Попытка {i+1}/{max_retries}: {running_count}/3 реплик запущено")
-            if running_count == 3:
-                print("Все реплики успешно запущены!")
-                break
-        else:
-            print(f"Попытка {i+1}: Ожидание появления сервиса...")
-            
-        time.sleep(10)
-    else:
-        print("ВНИМАНИЕ: Сервис не вышел в стабильное состояние за отведенное время.")
-        run_ssh(manager, f"docker service ps {service_name} --no-trunc")
+    env_vars = (
+        f"export DB_USER='{config.get('db_user', 'postgres')}' && "
+        f"export DB_PASSWORD='{config.get('db_password', 'postgres')}' && "
+        f"export DB_NAME='{config.get('db_name', 'postgres')}' && "
+        f"export PGADMIN_EMAIL='{config.get('pgadmin_email', 'admin@admin.com')}' && "
+        f"export PGADMIN_PASSWORD='{config.get('pgadmin_password', 'admin_password_123')}'"
+    )
     
-    # 10. Мониторинг (Portainer)
+    deploy_infra_cmd = f"{env_vars} && docker stack deploy -c {remote_infra_path} {stack_name}"
+    run_ssh(manager, deploy_infra_cmd)
+
+    # 11. Мониторинг (Portainer)
     print("\n--- Шаг 9: Установка Portainer ---")
     portainer_url = "https://raw.githubusercontent.com/portainer/portainer-compose/master/docker-stack.yml"
     # Проверяем, не запущен ли уже portainer
@@ -307,9 +283,9 @@ def main():
         print("Стек Portainer уже запущен")
     
     print("\n=== Деплой успешно завершен! ===")
-    print(f"Приложение доступно по адресу: http://{manager['ip']}:8080")
+    print(f"Инфраструктура запущена.")
     print(f"Portainer доступен по адресу: http://{manager['ip']}:9000")
-    print(f"\nДля диагностики на менеджер-ноде выполните: /root/post-deploy-checklist.sh")
+    print(f"\nДля деплоя сервисов запустите: python update_services.py")
     
     if os.path.exists("CHANGELOG.md"):
         print("\nОбновления безопасности и стабильности (см. CHANGELOG.md):")
