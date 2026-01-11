@@ -1,0 +1,54 @@
+# Зависимости
+node_modules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Сборка Next.js
+.next
+out
+build
+
+# IDE и системные файлы
+.idea
+.vscode
+*.swp
+*.swo
+.DS_Store
+thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Окружение
+.env*
+!.env.example
+
+# Docker и CI/CD
+Dockerfile
+Dockerfile.dev
+.dockerignore
+
+# Конфигурации и типизация
+# eslint.config.mjs
+# components.json
+# next-env.d.ts
+*.tsbuildinfo
+
+# Тесты и покрытие
+coverage
+__tests__
+*.test.js
+*.test.ts
+*.test.jsx
+*.test.tsx
+*.spec.js
+*.spec.ts
+*.spec.jsx
+*.spec.tsx
+
+# Прочее
+README.md
+LICENSE
