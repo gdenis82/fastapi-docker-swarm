@@ -1,48 +1,41 @@
-# Инфраструктура FastAPI в Docker Swarm (3 ноды)
+# Инфраструктура FastAPI и Next.js в Docker Swarm (3 ноды)
 
-Данный проект настроен для автоматического развертывания отказоустойчивого приложения FastAPI в кластере Docker Swarm из 3-х нод.
+Данный проект настроен для автоматического развертывания отказоустойчивого приложения (Backend + Frontend) в кластере Docker Swarm.
+
+## Структура проекта
+
+- `infrastructure/`: Скрипты для настройки и инициализации кластера (firewall, swarm init, registry, db).
+- `deploy/`: Конфигурационные файлы Docker Compose для разных уровней стека.
+  - `infrastructure.yml`: База данных Postgres и Redis (размещаются на Manager ноде).
+  - `services.yml`: Прикладные сервисы Backend и Frontend (Frontend на Manager, Backend на Worker нодах).
+- `services/`: Исходный код бэкенда (FastAPI) и фронтенда (Next.js).
+- `update_services.py`: Скрипт для сборки образов и обновления прикладных сервисов.
 
 ## Автоматический деплой
 
-Для полной автоматизации процесса (настройка firewall, инициализация кластера, метки, секреты, сборка и деплой) используйте скрипт `automate_deploy.py`.
-
 ### 1. Настройка конфигурации
-Отредактируйте файл `inventory.json`, указав IP-адреса ваших нод, пользователей и пути к SSH-ключам.
+Отредактируйте файл `infrastructure/inventory.json`, указав IP-адреса ваших нод, пользователей, пути к SSH-ключам и параметры БД.
 
-```json
-{
-  "manager": {
-    "ip": "85.198.86.165",
-    "user": "root",
-    "key_path": "C:\\path\\to\\key",
-    "password": ""
-  },
-  "workers": [
-    { "hostname": "worker-1", "ip": "155.212.146.21", "user": "root", "key_path": "C:\\path\\to\\key" },
-    { "hostname": "worker-2", "ip": "85.198.102.85", "user": "root", "key_path": "C:\\path\\to\\key" }
-  ],
-  "registry": "85.198.86.165:5000",
-  "stack_name": "fastapi_stack",
-  "app_secret": "your_secret_here"
-}
-```
-
-### 2. Запуск деплоя
-Запустите скрипт на вашей локальной машине:
+### 2. Подготовка кластера и инфраструктуры
+Запустите скрипт инициализации кластера:
 ```bash
-python automate_deploy.py
+python infrastructure/automate_deploy.py
 ```
+Этот скрипт настроит ноды, объединит их в Swarm и развернет базу данных с Redis на менеджер-ноде.
 
-Скрипт выполнит:
-1. Настройку Firewall на всех нодах через SSH (включая порты для Swarm, Portainer, Registry и приложения на 8080).
-2. Настройку и запуск локального Docker Registry на Manager ноде.
-3. Инициализацию Docker Swarm на Manager.
-4. Присоединение Worker нод к кластеру.
-5. Установку меток (`node.labels.type=worker`).
-6. Создание Docker Secrets.
-7. Сборку Docker-образа и его Push в локальный Registry.
-8. Деплой стека с использованием `docker-compose.yml`.
-9. Установку Portainer для мониторинга.
+### 3. Деплой приложений
+Для сборки и запуска бэкенда и фронтенда используйте:
+```bash
+python update_services.py
+```
+Скрипт соберет Docker-образы локально, отправит их в реестр на менеджер-ноде и запустит их в кластере (Frontend на менеджере, Backend на воркерах).
+
+## Особенности реализации
+- **Разделение ролей**: БД, Redis и Фронтенд работают на мастере (менеджере), Бэкенд распределяется по воркерам.
+- **Сетевая изоляция**: Все компоненты общаются внутри overlay-сети `app_network`.
+- **Zero Downtime**: Обновление сервисов происходит по стратегии `start-first`.
+
+---
 
 ### Важное примечание по Registry
 Локальный Registry работает по протоколу HTTP (без SSL), поэтому Docker по умолчанию блокирует подключение к нему из соображений безопасности. 
@@ -99,10 +92,10 @@ python automate_deploy.py
 
 ```bash
 # Обычная очистка (удаление стеков, секретов и prune системы)
-python cleanup_nodes.py
+python infrastructure/cleanup_nodes.py
 
 # Полная очистка (включая выход из Docker Swarm на всех нодах)
-python cleanup_nodes.py --full
+python infrastructure/cleanup_nodes.py --full
 ```
 
 ## Ручная настройка (для справки)

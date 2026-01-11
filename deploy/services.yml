@@ -1,0 +1,75 @@
+
+services:
+  backend:
+    image: ${REGISTRY_URL}/backend:latest
+    environment:
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgres}
+      - DB_NAME=${DB_NAME:-postgres}
+      - REDIS_HOST=redis
+      - SECRET_KEY=${APP_SECRET}
+      - NODE_NAME={{.Node.Hostname}}
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 256M
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - "node.role == worker"
+      update_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: on-failure
+
+  frontend:
+    image: ${REGISTRY_URL}/frontend:latest
+    environment:
+      - NEXT_PUBLIC_API_URL=/api
+    deploy:
+      replicas: 2
+      resources:
+        limits:
+          memory: 256M
+      placement:
+        max_replicas_per_node: 1
+        constraints:
+          - "node.role == worker"
+      update_config:
+        parallelism: 1
+        order: start-first
+      restart_policy:
+        condition: on-failure
+
+  nginx:
+    image: nginx:alpine
+    configs:
+      - source: nginx_config_v2
+        target: /etc/nginx/conf.d/default.conf
+    ports:
+      - target: 80
+        published: 80
+        protocol: tcp
+        mode: host
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+      placement:
+        constraints:
+          - "node.role == manager"
+      restart_policy:
+        condition: on-failure
+
+configs:
+  nginx_config_v2:
+    file: ./nginx/default.conf
+
+networks:
+  default:
+    external:
+      name: app_network
