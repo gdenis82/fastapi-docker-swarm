@@ -59,9 +59,6 @@ def setup_firewall(host_config, is_manager=False):
     # 3. Специфично для Beget/Ubuntu - открываем протокол 50 (ESP) и 51 (AH) если нужно, 
     # но для Swarm обычно достаточно UDP 4789.
     
-    # Перезапуск docker после настройки сети часто помогает инициализировать overlay правильно
-    commands.append("sudo systemctl restart docker")
-    
     run_ssh(host_config, " && ".join(commands))
 
 def setup_registry(manager_config, config):
@@ -224,12 +221,13 @@ def main():
         
     # 9. Создание сети
     print("\n--- Шаг 7: Создание сети ---")
-    check_net_cmd = "docker network ls --filter name=app_network -q"
+    # Используем grep для совместимости, так как --filter может не поддерживаться в некоторых версиях
+    check_net_cmd = "docker network ls --format '{{.Name}}' | grep -w app_network"
     net_exists = run_ssh(manager, check_net_cmd)
     
     if not net_exists:
         print("Создание сети app_network...")
-        run_ssh(manager, "docker network create --driver overlay app_network")
+        run_ssh(manager, "docker network create --driver overlay --attachable app_network")
     else:
         print("Сеть app_network уже существует")
 
@@ -248,8 +246,34 @@ def main():
     with open(deploy_file, "r") as f:
         infra_compose = f.read()
     
-    remote_infra_path = "/tmp/infrastructure.yml"
-    run_ssh(manager, f"cat <<'EOF' > {remote_infra_path}\n{infra_compose}\nEOF")
+    # Подготовка pgadmin_servers.json
+    pgadmin_servers = {
+        "Servers": {
+            "1": {
+                "Name": "FastAPI App DB",
+                "Group": "Servers",
+                "Host": "db",
+                "Port": 5432,
+                "MaintenanceDB": config.get('db_name', 'postgres'),
+                "Username": config.get('db_user', 'postgres'),
+                "Password": config.get('db_password', 'postgres'),
+                "SSLMode": "prefer"
+            }
+        }
+    }
+    servers_json_content = json.dumps(pgadmin_servers, indent=4)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Подставляем версию конфига прямо в текст YAML, так как Swarm не поддерживает переменные в именах ключей configs
+    infra_compose = infra_compose.replace("${SERVERS_VERSION:-v1}", timestamp)
+
+    # Создаем папку для деплоя на менеджере
+    infra_dir = "/tmp/infra"
+    run_ssh(manager, f"mkdir -p {infra_dir}")
+    
+    # Загружаем файлы
+    run_ssh(manager, f"cat > {infra_dir}/infrastructure.yml", input_data=infra_compose)
+    run_ssh(manager, f"cat > {infra_dir}/pgadmin_servers.json", input_data=servers_json_content)
     
     env_vars = (
         f"export DB_USER='{config.get('db_user', 'postgres')}' && "
@@ -259,14 +283,15 @@ def main():
         f"export PGADMIN_PASSWORD='{config.get('pgadmin_password', 'admin_password_123')}'"
     )
     
-    deploy_infra_cmd = f"{env_vars} && docker stack deploy -c {remote_infra_path} {stack_name}"
+    deploy_infra_cmd = f"cd {infra_dir} && {env_vars} && docker stack deploy -c infrastructure.yml {stack_name}"
     run_ssh(manager, deploy_infra_cmd)
 
     # 11. Мониторинг (Portainer)
     print("\n--- Шаг 9: Установка Portainer ---")
     portainer_url = "https://raw.githubusercontent.com/portainer/portainer-compose/master/docker-stack.yml"
     # Проверяем, не запущен ли уже portainer
-    exists = run_ssh(manager, "docker stack ls --filter name=portainer -q")
+    # Используем grep для совместимости, так как --filter может не поддерживаться в некоторых версиях docker stack ls
+    exists = run_ssh(manager, "docker stack ls --format '{{.Name}}' | grep -w portainer")
     if not exists:
         # Скачиваем, исправляем образ на portainer-ce, изолируем сеть и убираем --tlsskipverify
         portainer_cmd = (
@@ -285,6 +310,7 @@ def main():
     print("\n=== Деплой успешно завершен! ===")
     print(f"Инфраструктура запущена.")
     print(f"Portainer доступен по адресу: http://{manager['ip']}:9000")
+    print(f"pgAdmin доступен по адресу: http://{manager['ip']}:8080")
     print(f"\nДля деплоя сервисов запустите: python update_services.py")
     
     if os.path.exists("CHANGELOG.md"):
