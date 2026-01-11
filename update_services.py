@@ -5,7 +5,7 @@ import sys
 import time
 from datetime import datetime
 
-def run_ssh(host_config, command, input_data=None):
+def run_ssh(host_config, command, input_data=None, stream=False):
     """Выполняет команду на удаленном хосте через SSH."""
     ssh_base = ["ssh", "-o", "StrictHostKeyChecking=no"]
     if host_config.get("key_path"):
@@ -13,10 +13,35 @@ def run_ssh(host_config, command, input_data=None):
     connection_str = f"{host_config['user']}@{host_config['ip']}"
     full_command = ssh_base + [connection_str, command]
     
-    # print(f"[{host_config['ip']}] Выполнение: {command}")
+    if stream:
+        process = subprocess.Popen(
+            full_command, 
+            stdin=subprocess.PIPE if input_data else None,
+            stdout=subprocess.PIPE, 
+            stderr=subprocess.STDOUT, 
+            text=True,
+            bufsize=1
+        )
+        if input_data:
+            process.stdin.write(input_data)
+            process.stdin.close()
+        
+        output = []
+        for line in process.stdout:
+            print(line, end="")
+            output.append(line)
+        
+        process.wait()
+        if process.returncode != 0:
+            return None
+        return "".join(output).strip()
+
+    # Обычный запуск через subprocess.run
     result = subprocess.run(full_command, input=input_data, capture_output=True, text=True)
+    
     if result.returncode != 0:
-        print(f"Ошибка на {host_config['ip']}: {result.stderr}")
+        if result.stderr:
+            print(f"Ошибка на {host_config['ip']}: {result.stderr.strip()}")
         return None
     return result.stdout.strip()
 
@@ -73,8 +98,12 @@ def main():
     with open(deploy_file, "r") as f:
         compose_content = f.read()
     
+    # Версионирование конфига Nginx для принудительного обновления сервиса
+    nginx_version = datetime.now().strftime("%Y%m%d_%H%M%S")
+    compose_content = compose_content.replace("${NGINX_CONFIG_VERSION:-v1}", nginx_version)
+    
     remote_compose_path = "/tmp/deploy/services.yml"
-    run_ssh(manager, f"cat <<'EOF' > {remote_compose_path}\n{compose_content}\nEOF")
+    run_ssh(manager, f"cat > {remote_compose_path}", input_data=compose_content)
     
     # Копируем nginx config
     nginx_conf_file = "deploy/nginx/default.conf"
@@ -82,7 +111,7 @@ def main():
         nginx_conf_content = f.read()
     
     remote_nginx_conf_path = "/tmp/deploy/nginx/default.conf"
-    run_ssh(manager, f"cat <<'EOF' > {remote_nginx_conf_path}\n{nginx_conf_content}\nEOF")
+    run_ssh(manager, f"cat > {remote_nginx_conf_path}", input_data=nginx_conf_content)
     
     # 4. Деплой или Обновление сервисов
     print("\n--- Шаг 4: Деплой сервисов в Swarm ---")
@@ -99,9 +128,49 @@ def main():
     deploy_cmd = f"cd /tmp/deploy && {env_vars} && docker stack deploy --with-registry-auth -c services.yml {stack_name}"
     
     print("Запуск docker stack deploy...")
-    out = run_ssh(manager, deploy_cmd)
-    if out:
-        print(out)
+    run_ssh(manager, deploy_cmd, stream=True)
+
+    # 5. Запуск миграций БД
+    print("\n--- Шаг 5: Запуск миграций БД ---")
+    
+    print("Проверка готовности базы данных...")
+    # Ждем пока контейнер БД станет healthy
+    wait_db_cmd = f"docker ps --filter name={stack_name}_db --filter health=healthy -q"
+    for i in range(10):
+        db_ready_id = run_ssh(manager, wait_db_cmd)
+        if db_ready_id:
+            print("База данных готова.")
+            break
+        print(f"Попытка {i+1}/10: база данных еще не готова (ждем статус healthy), ждем 5с...")
+        time.sleep(5)
+
+    print("Запуск временного контейнера для миграций на менеджере...")
+    
+    # Формируем переменные окружения для docker run
+    # Нам нужно подключиться к БД. В Swarm БД доступна по имени сервиса 'db' в сети 'app_network'.
+    # Поскольку мы запускаем контейнер через `docker run`, нам нужно подключить его к этой же сети.
+    
+    # Проверим, какой образ мы только что запушили
+    # backend_image уже содержит полный путь с тегом timestamp или latest
+    
+    migration_cmd = (
+        f"docker run --rm --network app_network "
+        f"-e DB_HOST=db "
+        f"-e DB_PORT=5432 "
+        f"-e DB_USER='{config.get('db_user', 'postgres')}' "
+        f"-e DB_PASSWORD='{config.get('db_password', 'postgres')}' "
+        f"-e DB_NAME='{config.get('db_name', 'postgres')}' "
+        f"-e REDIS_HOST=redis "
+        f"-e SECRET_KEY='{config['app_secret']}' "
+        f"{backend_image} alembic upgrade head"
+    )
+    
+    migrate_out = run_ssh(manager, migration_cmd, stream=True)
+    if migrate_out is None:
+        print("ОШИБКА: Миграции не были применены!")
+        sys.exit(1)
+    
+    print("Миграции успешно применены.")
 
     print("\n=== Обновление сервисов завершено ===")
     print(f"Приложение должно быть доступно по адресу: http://{manager['ip']}")
