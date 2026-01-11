@@ -9,9 +9,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     deploy:
-      resources:
-        limits:
-          memory: 256M
+
       placement:
         constraints:
           - "node.role == manager"
@@ -26,9 +24,7 @@ services:
   redis:
     image: redis:7-alpine
     deploy:
-      resources:
-        limits:
-          memory: 64M
+
       placement:
         constraints:
           - "node.role == manager"
@@ -40,17 +36,26 @@ services:
     environment:
       - PGADMIN_DEFAULT_EMAIL=${PGADMIN_EMAIL:-admin@admin.com}
       - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_PASSWORD:-admin_password_123}
-      - PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION=True
-      - PGADMIN_CONFIG_LOGIN_BANNER="DATABASE MANAGER ACCESS"
+      - PGADMIN_CONFIG_CONSOLE_LOG_LEVEL=10
+      - PGADMIN_SERVER_JSON_FILE=/pgadmin4/servers.json
+    ports:
+      - target: 80
+        published: 8080
+        protocol: tcp
+        mode: ingress
+    configs:
+      - source: pgadmin_servers_${SERVERS_VERSION:-v1}
+        target: /pgadmin4/servers.json
     deploy:
-      resources:
-        limits:
-          memory: 512M
       placement:
         constraints:
           - "node.role == manager"
       restart_policy:
         condition: on-failure
+
+configs:
+  pgadmin_servers_${SERVERS_VERSION:-v1}:
+    file: ./pgadmin_servers.json
 
 networks:
   default:
