@@ -45,7 +45,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
       placement:
         constraints:
           - "node.role == manager"
