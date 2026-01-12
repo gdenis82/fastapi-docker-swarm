@@ -400,23 +400,29 @@ def main():
     exists = run_ssh(manager, "docker stack ls --format '{{.Name}}' | grep -w portainer")
     if not exists:
         # Скачиваем, исправляем образ на portainer-ce, изолируем сеть и убираем --tlsskipverify
+        # Добавляем метки для Traefik и подключаем к внешней сети app_network
         portainer_cmd = (
             f"curl -L {portainer_url} -o /tmp/portainer.yml && "
             f"sed -i 's/portainer\\/portainer/portainer\\/portainer-ce/g' /tmp/portainer.yml && "
             f"sed -i '/agent_network:/,/driver: overlay/ s/driver: overlay/driver: overlay\\n    internal: true\\n    attachable: false/' /tmp/portainer.yml && "
             f"sed -i 's/--tlsskipverify//g' /tmp/portainer.yml && "
+            # Добавление labels для Traefik
+            f"sed -i '/portainer:/a \\    networks:\\n      - app_network\\n      - agent_network\\n    deploy:\\n      labels:\\n        - \"traefik.enable=true\"\\n        - \"traefik.http.routers.portainer.rule=Host(`portainer.tryout.site`)\"\\n        - \"traefik.http.routers.portainer.entrypoints=websecure\"\\n        - \"traefik.http.routers.portainer.tls.certresolver=myresolver\"\\n        - \"traefik.http.services.portainer.loadbalancer.server.port=9000\"' /tmp/portainer.yml && "
+            # Добавление внешней сети app_network в список сетей в конце файла
+            f"sed -i '$ a \\\\nnetworks:\\n  app_network:\\n    external: true' /tmp/portainer.yml && "
             f"grep -q 'services:' /tmp/portainer.yml && "
             f"docker stack deploy -c /tmp/portainer.yml portainer"
         )
         run_ssh(manager, portainer_cmd)
-        print("Команда деплоя Portainer (CE) с изоляцией сети и hardening оправлена")
+        print("Команда деплоя Portainer (CE) с Traefik labels, изоляцией сети и hardening оправлена")
     else:
         print("Стек Portainer уже запущен")
     
     print("\n=== Деплой успешно завершен! ===")
     print(f"Инфраструктура запущена.")
-    print(f"Portainer доступен по адресу: http://{manager['ip']}:9000")
-    print(f"pgAdmin доступен по адресу: http://{manager['ip']}:8080")
+    print(f"Portainer доступен по адресу: https://portainer.tryout.site (или http://{manager['ip']}:9000)")
+    print(f"Grafana доступна по адресу: https://grafana.tryout.site")
+    print(f"pgAdmin доступен по адресу: https://pgadmin.tryout.site (или http://{manager['ip']}:8080)")
     print(f"\nДля деплоя сервисов запустите: python update_services.py")
     
     if os.path.exists("CHANGELOG.md"):
