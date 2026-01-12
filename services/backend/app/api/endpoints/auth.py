@@ -114,7 +114,34 @@ async def register(
             .options(selectinload(User.role_obj))
         )
         user = result.scalar_one()
-        return user
+        
+        # Создаем токены и устанавливаем куки сразу после регистрации
+        access_token = security.create_access_token(user.id)
+        refresh_token = security.create_refresh_token(user.id)
+        
+        response = JSONResponse(UserSchema.model_validate(user).model_dump())
+        
+        response.set_cookie(
+            key="access_token",
+            value=access_token,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="lax",
+            max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            path="/",
+        )
+        
+        response.set_cookie(
+            key="refresh_token",
+            value=refresh_token,
+            httponly=True,
+            secure=not settings.DEBUG,
+            samesite="strict",
+            max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+            path="/api/auth",
+        )
+        
+        return response
     except HTTPException:
         raise
     except Exception as e:
@@ -175,7 +202,7 @@ async def login(
         value=access_token,
         httponly=True,
         secure=not settings.DEBUG,
-        samesite="lax", # "lax" лучше для cross-site переходов с сохранением сессии
+        samesite="lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
