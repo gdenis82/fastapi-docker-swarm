@@ -19,7 +19,9 @@ class User(Base):
     role_obj: Mapped["Role"] = relationship("Role", back_populates="users")
 
     def role_name(self):
-        return self.role_obj.name
+        if self.role_obj:
+            return self.role_obj.name
+        return "No Role"
 
     # Serialization method
     def serialization(self) -> Dict[str, Any]:
