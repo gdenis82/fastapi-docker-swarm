@@ -22,5 +22,10 @@
   "registry_user": "REGISTRY_USER",
   "registry_password": "REGISTRY_PASSWORD",
   "stack_name": "STACK_NAME",
-  "app_secret": "APP_SECRET_VALUE"
+  "app_secret": "APP_SECRET_VALUE",
+  "db_user": "DB_USER",
+  "db_password": "DB_PASSWORD",
+  "db_name": "DB_NAME",
+  "pgadmin_email": "PGADMIN_EMAIL",
+  "pgadmin_password": "PGADMIN_PASSWORD"
 }
