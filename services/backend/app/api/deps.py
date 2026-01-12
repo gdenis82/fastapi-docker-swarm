@@ -1,9 +1,10 @@
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from typing import Optional
 
 from app.core.logger import logger
 from app.core.config import settings
@@ -12,7 +13,32 @@ from app.db.session import get_db
 from app.models.user import User
 from app.schemas.token import TokenPayload
 
-reusable_oauth2 = OAuth2PasswordBearer(
+class OAuth2PasswordBearerWithCookie(OAuth2PasswordBearer):
+    async def __call__(self, request: Request) -> Optional[str]:
+        # Сначала ищем в заголовках (стандартное поведение)
+        authorization: str = request.headers.get("Authorization")
+        
+        if not authorization:
+            # Если нет в заголовках, ищем в куках
+            authorization = request.cookies.get("access_token")
+            if authorization:
+                # Если нашли в куках, возвращаем его
+                # OAuth2PasswordBearer ожидает просто строку токена (без Bearer)
+                return authorization
+            
+            if self.auto_error:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Not authenticated",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            else:
+                return None
+        
+        # Если есть заголовок, используем родительский метод для парсинга "Bearer <token>"
+        return await super().__call__(request)
+
+reusable_oauth2 = OAuth2PasswordBearerWithCookie(
     tokenUrl="/api/auth/login"
 )
 
