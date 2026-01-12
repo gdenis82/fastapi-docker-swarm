@@ -103,6 +103,7 @@ python update_services.py
 - **Backend API**: `https://tryout.site/api`
 - **Grafana**: `https://grafana.tryout.site` (порт 3000 закрыт для прямого доступа)
 - **pgAdmin**: `https://pgadmin.tryout.site` (порт 8080 закрыт для прямого доступа)
+- **Portainer**: `https://portainer.tryout.site` (порт 9000 закрыт для прямого доступа)
 
 ### Настройка DNS
 Для работы поддоменов необходимо добавить **A-записи** у вашего регистратора:
@@ -112,6 +113,7 @@ python update_services.py
 | `@` (или основной) | A | `85.198.86.165` |
 | `grafana` | A | `85.198.86.165` |
 | `pgadmin` | A | `85.198.86.165` |
+| `portainer` | A | `85.198.86.165` |
 
 SSL-сертификаты (Let's Encrypt) будут выпущены автоматически через Traefik при первом обращении к доменам.
 
@@ -191,7 +193,7 @@ python infrastructure/cleanup_nodes.py --full
 - **Loki**: Централизованный сбор логов.
 - **Node-Exporter**: Метрики операционной системы.
 - **cAdvisor**: Метрики контейнеров.
-- **Portainer** (порт 9000): Управление контейнерами.
+- **Portainer**: Управление контейнерами (доступен по `https://portainer.tryout.site`).
 
 ### Сканирование уязвимостей
 При каждом деплое через `update_services.py` автоматически запускается сканирование образов с помощью **Trivy**. 
