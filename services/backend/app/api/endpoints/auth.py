@@ -89,13 +89,20 @@ async def register(
             )
         
         role = await get_role_by_name(db, "user")
+        if not role:
+            from app.core.logger import logger
+            logger.error("CRITICAL: Role 'user' not found in database. Registration failed.")
+            raise HTTPException(
+                status_code=500,
+                detail="System configuration error: default role not found."
+            )
         
         user = User(
             username=user_in.username,
             email=user_in.email,
             hashed_password=security.get_password_hash(user_in.password),
             is_active=True,
-            role_id=role.id if role else None
+            role_id=role.id
         )
         db.add(user)
         await db.commit()
@@ -159,11 +166,21 @@ async def login(
     refresh_token = security.create_refresh_token(user.id)
     
     response = JSONResponse({
-        "access_token": access_token,
         "token_type": "bearer",
     })
-    # We set the cookie for browser clients.
-    # For CSRF protection, we use samesite="strict" and httponly=True.
+    
+    # Access Token в HttpOnly куку (BFF pattern)
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax", # "lax" лучше для cross-site переходов с сохранением сессии
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    
+    # Refresh Token в HttpOnly куку
     response.set_cookie(
         key="refresh_token",
         value=refresh_token,
@@ -273,9 +290,20 @@ async def refresh(
         raise HTTPException(status_code=503, detail="Service temporarily unavailable, please try later")
     
     response = JSONResponse({
-        "access_token": new_access_token,
         "token_type": "bearer",
     })
+    
+    # Access Token в HttpOnly куку (BFF pattern)
+    response.set_cookie(
+        key="access_token",
+        value=new_access_token,
+        httponly=True,
+        secure=not settings.DEBUG,
+        samesite="lax",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        path="/",
+    )
+    
     response.set_cookie(
         key="refresh_token",
         value=new_refresh_token,
