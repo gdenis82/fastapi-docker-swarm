@@ -5,9 +5,9 @@ import sys
 import time
 from datetime import datetime
 
-def run_ssh(host_config, command, input_data=None):
+def run_ssh(host_config, command, input_data=None, timeout=30):
     """Выполняет команду на удаленном хосте через SSH."""
-    ssh_base = ["ssh", "-o", "StrictHostKeyChecking=no"]
+    ssh_base = ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
     
     if host_config.get("key_path"):
         ssh_base += ["-i", host_config["key_path"]]
@@ -20,46 +20,90 @@ def run_ssh(host_config, command, input_data=None):
     else:
         print(f"[{host_config['ip']}] Выполнение: {command}")
         
-    result = subprocess.run(
-        full_command, 
-        input=input_data if input_data else None,
-        capture_output=True, 
-        text=True
-    )
-    
-    if result.returncode != 0:
-        print(f"Ошибка на {host_config['ip']}: {result.stderr}")
+    try:
+        result = subprocess.run(
+            full_command, 
+            input=input_data if input_data else None,
+            capture_output=True, 
+            text=True,
+            timeout=timeout
+        )
+        
+        if result.returncode != 0:
+            # Если это ошибка подключения SSH, а не ошибка выполнения команды
+            if "ssh: connect to host" in result.stderr or "Connection timed out" in result.stderr:
+                print(f"ОШИБКА ПОДКЛЮЧЕНИЯ на {host_config['ip']}: {result.stderr.strip()}")
+            else:
+                print(f"Ошибка выполнения на {host_config['ip']}: {result.stderr.strip()}")
+            return None
+        return result.stdout.strip()
+    except subprocess.TimeoutExpired:
+        print(f"ОШИБКА: Превышено время ожидания (timeout) для {host_config['ip']}")
         return None
-    return result.stdout.strip()
+    except Exception as e:
+        print(f"ОШИБКА при выполнении SSH для {host_config['ip']}: {str(e)}")
+        return None
 
-def setup_firewall(host_config, is_manager=False):
+def check_connections(config):
+    """Проверяет доступность всех нод перед началом деплоя."""
+    print("\n--- Шаг 0: Проверка доступности нод ---")
+    nodes = [config["manager"]] + config["workers"]
+    all_ok = True
+    
+    for node in nodes:
+        print(f" Проверка {node['ip']}...")
+        res = run_ssh(node, "echo 'ok'")
+        if res != "ok":
+            print(f" ! НОДА {node['ip']} НЕДОСТУПНА. Проверьте сеть, SSH-ключи и настройки сервера.")
+            all_ok = False
+        else:
+            print(f" {node['ip']} доступна.")
+    
+    if not all_ok:
+        confirm = input("\nНекоторые ноды недоступны. Продолжить деплой на доступных? (y/n): ")
+        if confirm.lower() != 'y':
+            sys.exit(1)
+    return all_ok
+
+def setup_firewall(host_config, cluster_ips, is_manager=False):
     print(f" Настройка Firewall на {host_config['ip']}...")
     
-    # Порты для Swarm и сервисов
-    tcp_ports = ["22", "2376", "2377", "7946", "80", "443", "8080", "9000", "9443", "5000"]
-    udp_ports = ["7946", "4789"]
+    # Сначала проверяем доступность, чтобы не тратить время
+    if run_ssh(host_config, "echo 1") is None:
+        print(f" Пропуск настройки Firewall для {host_config['ip']} (нода недоступна)")
+        return
+
+    # Общедоступные порты
+    public_ports = ["22", "80", "443", "8080", "9000"]
+    # Порты Swarm и Registry (только для внутреннего использования в кластере)
+    internal_tcp_ports = ["2376", "2377", "7946", "5000"]
+    internal_udp_ports = ["7946", "4789"]
     
-    # Мы попробуем использовать и ufw (если есть), и iptables напрямую для надежности
-    commands = [
-        "sudo ufw allow 22/tcp", # Всегда разрешаем SSH первым
-    ]
+    # Сначала сбрасываем и настраиваем базовые правила без включения
+    # Используем --force чтобы не спрашивать подтверждения
+    run_ssh(host_config, "sudo ufw --force reset")
+    run_ssh(host_config, "sudo ufw default deny incoming")
+    run_ssh(host_config, "sudo ufw default allow outgoing")
     
-    # 1. Попытка через ufw
-    for p in tcp_ports:
-        commands.append(f"sudo ufw allow {p}/tcp")
-    for p in udp_ports:
-        commands.append(f"sudo ufw allow {p}/udp")
+    # Разрешаем SSH и публичные порты
+    for p in public_ports:
+        run_ssh(host_config, f"sudo ufw allow {p}/tcp")
     
-    # 2. Попытка через iptables (на случай если ufw выключен или не установлен)
-    for p in tcp_ports:
-        commands.append(f"sudo iptables -A INPUT -p tcp --dport {p} -j ACCEPT || true")
-    for p in udp_ports:
-        commands.append(f"sudo iptables -A INPUT -p udp --dport {p} -j ACCEPT || true")
-    
-    # 3. Специфично для Beget/Ubuntu - открываем протокол 50 (ESP) и 51 (AH) если нужно, 
-    # но для Swarm обычно достаточно UDP 4789.
-    
-    run_ssh(host_config, " && ".join(commands))
+    # Ограничиваем Swarm порты только для IP кластера
+    # Группируем правила по IP, чтобы уменьшить количество вызовов SSH, 
+    # но не делаем одну гигантскую строку
+    for ip in cluster_ips:
+        ip_commands = []
+        for p in internal_tcp_ports:
+            ip_commands.append(f"sudo ufw allow from {ip} to any port {p} proto tcp")
+        for p in internal_udp_ports:
+            ip_commands.append(f"sudo ufw allow from {ip} to any port {p} proto udp")
+        run_ssh(host_config, " && ".join(ip_commands))
+            
+    # Включаем ufw. 
+    # Важно: ufw enable может спросить "Command may disrupt existing ssh connections. Proceed with operation (y|n)?"
+    # Мы используем --force или echo y
+    run_ssh(host_config, "sudo ufw --force enable")
 
 def setup_registry(manager_config, config):
     print(f" Настройка Docker Registry как Swarm Service на {manager_config['ip']}...")
@@ -114,9 +158,14 @@ def setup_insecure_registry(host_config, registry_ip):
     check_cmd = f"sudo cat {daemon_json_path} 2>/dev/null || echo '{{}}'"
     content = run_ssh(host_config, check_cmd)
     
+    if content is None:
+        print(f" Пропуск настройки insecure-registry для {host_config['ip']} (нода недоступна)")
+        return
+
     try:
         data = json.loads(content)
-    except:
+    except Exception as e:
+        print(f"Предупреждение: Ошибка парсинга {daemon_json_path} на {host_config['ip']}: {e}. Используем пустой конфиг.")
         data = {}
         
     insecure_registries = data.get("insecure-registries", [])
@@ -126,12 +175,40 @@ def setup_insecure_registry(host_config, registry_ip):
         
         # Записываем обратно
         new_content = json.dumps(data, indent=4)
-        # Используем base64 или просто экранируем кавычки для записи через SSH
-        write_cmd = f"echo '{new_content}' | sudo tee {daemon_json_path} > /dev/null && sudo systemctl restart docker"
+        # Экранируем одинарные кавычки для shell
+        escaped_content = new_content.replace("'", "'\\''")
+        write_cmd = f"echo '{escaped_content}' | sudo tee {daemon_json_path} > /dev/null && sudo systemctl restart docker"
         run_ssh(host_config, write_cmd)
         print(f" Registry {registry_ip} добавлен в insecure-registries на {host_config['ip']}")
     else:
         print(f" Registry {registry_ip} уже в списке на {host_config['ip']}")
+
+def setup_secrets(manager_config, config):
+    print(f" Настройка Docker Secrets на {manager_config['ip']}...")
+    
+    secrets = {
+        "db_password": config["db_password"],
+        "db_user": config["db_user"],
+        "db_name": config["db_name"],
+        "app_secret": config["app_secret"],
+        "secret_key": config["app_secret"], # Для совместимости
+        "registry_password": config["registry_password"],
+        "pgadmin_password": config["pgadmin_password"],
+        "pgadmin_email": config["pgadmin_email"]
+    }
+    
+    for name, value in secrets.items():
+        # Проверяем, существует ли секрет
+        check_cmd = f"docker secret ls --filter name={name} -q"
+        exists = run_ssh(manager_config, check_cmd)
+        
+        if exists:
+            print(f" Секрет {name} уже существует, пропускаем.")
+            continue
+            
+        print(f" Создание секрета {name}...")
+        create_cmd = f"echo '{value}' | docker secret create {name} -"
+        run_ssh(manager_config, create_cmd)
 
 def main():
     # Поиск inventory.json в текущей директории или в директории скрипта
@@ -151,11 +228,17 @@ def main():
     registry = config["registry"]
     stack_name = config["stack_name"]
     
+    # Список всех IP в кластере для Firewall
+    cluster_ips = [manager["ip"]] + [w["ip"] for w in workers]
+    
+    # 0. Проверка соединений
+    check_connections(config)
+
     # 1. Настройка Firewall
     print("\n--- Шаг 1: Настройка Firewall ---")
-    setup_firewall(manager, is_manager=True)
+    setup_firewall(manager, cluster_ips, is_manager=True)
     for worker in workers:
-        setup_firewall(worker)
+        setup_firewall(worker, cluster_ips)
         
     # 2. Настройка insecure-registry на всех нодах
     print("\n--- Шаг 2: Настройка insecure-registry ---")
@@ -182,12 +265,20 @@ def main():
     print("\n--- Шаг 4: Присоединение воркеров ---")
     for worker in workers:
         w_status = run_ssh(worker, "docker info --format '{{.Swarm.LocalNodeState}}'")
+        if w_status is None:
+            print(f" Пропуск присоединения воркера {worker['ip']} (нода недоступна)")
+            continue
+            
         if w_status != "active":
             run_ssh(worker, join_cmd)
         else:
             print(f"Воркер {worker['ip']} уже в кластере")
             
-    # 6. Настройка Registry
+    # 6. Настройка Secrets
+    print("\n--- Шаг 4.1: Настройка Docker Secrets ---")
+    setup_secrets(manager, config)
+
+    # 7. Настройка Registry
     print("\n--- Шаг 5: Настройка Docker Registry ---")
     setup_registry(manager, config)
         
@@ -209,15 +300,20 @@ def main():
     
     # Логин на всех нодах (для pull)
     login_cmd = f"docker login {registry} -u {reg_user} -p {reg_pass}"
-    run_ssh(manager, login_cmd)
+    if run_ssh(manager, "echo 1") is not None:
+        run_ssh(manager, login_cmd)
     for worker in workers:
-        run_ssh(worker, login_cmd)
+        if run_ssh(worker, "echo 1") is not None:
+            run_ssh(worker, login_cmd)
         
     # 8. Настройка меток
     print("\n--- Шаг 6: Настройка меток ---")
     for worker in workers:
         hostname = run_ssh(worker, "hostname")
-        run_ssh(manager, f"docker node update --label-add type=worker {hostname}")
+        if hostname:
+            run_ssh(manager, f"docker node update --label-add type=worker {hostname}")
+        else:
+            print(f"Предупреждение: Не удалось получить hostname для воркера {worker['ip']}, метка не добавлена.")
         
     # 9. Создание сети
     print("\n--- Шаг 7: Создание сети ---")
@@ -274,6 +370,16 @@ def main():
     # Загружаем файлы
     run_ssh(manager, f"cat > {infra_dir}/infrastructure.yml", input_data=infra_compose)
     run_ssh(manager, f"cat > {infra_dir}/pgadmin_servers.json", input_data=servers_json_content)
+    
+    # Загружаем конфигурации мониторинга
+    monitoring_dir = os.path.join(os.path.dirname(deploy_file), "monitoring")
+    if os.path.exists(monitoring_dir):
+        run_ssh(manager, f"mkdir -p {infra_dir}/monitoring")
+        for filename in os.listdir(monitoring_dir):
+            if filename.endswith(".yml") or filename.endswith(".yaml"):
+                with open(os.path.join(monitoring_dir, filename), "r") as f:
+                    content = f.read()
+                run_ssh(manager, f"cat > {infra_dir}/monitoring/{filename}", input_data=content)
     
     env_vars = (
         f"export DB_USER='{config.get('db_user', 'postgres')}' && "
