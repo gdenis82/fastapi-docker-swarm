@@ -17,6 +17,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app/
 ENV PYTHONPATH=/app
 
-RUN chmod +x entrypoint.sh
+# Создаем не-привилегированного пользователя
+RUN groupadd -r appgroup && useradd -r -g appgroup appuser
+RUN chown -R appuser:appgroup /app
+
+USER appuser
 
 ENTRYPOINT ["./entrypoint.sh"]
