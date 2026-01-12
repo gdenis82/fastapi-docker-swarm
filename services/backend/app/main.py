@@ -51,10 +51,15 @@ def create_app() -> FastAPI:
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
         start_time = time.time()
+        
+        # Получаем данные о пользователе для аудита
+        ip = request.client.host if request.client else "unknown"
+        user_agent = request.headers.get("user-agent", "unknown")
+        
         try:
             response = await call_next(request)
         except Exception as e:
-            logger.exception(f"Unhandled exception during request: {e}")
+            logger.exception(f"Unhandled exception during request: {e} | IP: {ip} | UA: {user_agent}")
             from fastapi.responses import JSONResponse
             response = JSONResponse(
                 status_code=500,
@@ -62,10 +67,19 @@ def create_app() -> FastAPI:
             )
         
         duration = time.time() - start_time
-        logger.info(
+        
+        # Логируем с дополнительной информацией для аудита
+        log_msg = (
             f"Method: {request.method} Path: {request.url.path} "
-            f"Status: {response.status_code} Duration: {duration:.4f}s"
+            f"Status: {response.status_code} Duration: {duration:.4f}s "
+            f"IP: {ip} UA: {user_agent}"
         )
+        
+        if response.status_code >= 400:
+            logger.warning(log_msg)
+        else:
+            logger.info(log_msg)
+            
         return response
 
     # Configure CORS - added AFTER other middlewares to be processed FIRST for responses
