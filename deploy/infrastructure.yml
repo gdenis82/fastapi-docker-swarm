@@ -69,6 +69,7 @@ services:
         - "traefik.http.routers.grafana.rule=Host(`grafana.tryout.site`)"
         - "traefik.http.routers.grafana.entrypoints=websecure"
         - "traefik.http.routers.grafana.tls.certresolver=myresolver"
+        - "traefik.http.routers.grafana.middlewares=security-headers@docker"
         - "traefik.http.services.grafana.loadbalancer.server.port=3000"
       placement:
         constraints:
@@ -94,6 +95,7 @@ services:
     volumes:
       - /var/log:/var/log
       - /var/run/docker.sock:/var/run/docker.sock
+      - traefik_logs:/var/log/traefik:ro
     configs:
       - source: promtail_config
         target: /etc/promtail/config.yml
@@ -133,7 +135,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:latest
-    user: root
+    user: "5050:5050"
     environment:
       - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:-admin@admin.com}
       - PGADMIN_DEFAULT_PASSWORD_FILE=/run/secrets/pgadmin_password
@@ -160,6 +162,7 @@ services:
         - "traefik.http.routers.pgadmin.rule=Host(`pgadmin.tryout.site`)"
         - "traefik.http.routers.pgadmin.entrypoints=websecure"
         - "traefik.http.routers.pgadmin.tls.certresolver=myresolver"
+        - "traefik.http.routers.pgadmin.middlewares=security-headers@docker"
         - "traefik.http.services.pgadmin.loadbalancer.server.port=80"
       placement:
         constraints:
@@ -197,3 +200,5 @@ volumes:
   prometheus_data:
   grafana_data:
   pgadmin_data:
+  traefik_logs:
+    external: true
