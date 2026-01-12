@@ -13,10 +13,8 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = Cookies.get('token');
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  // Access Token теперь в HttpOnly куке, браузер отправит её автоматически
+  // с withCredentials: true. Нам не нужно вручную добавлять заголовок Authorization.
   return config;
 });
 
@@ -64,12 +62,8 @@ apiClient.interceptors.response.use(
           { withCredentials: true }
         );
 
-        const { access_token } = response.data;
-        Cookies.set('token', access_token);
-        apiClient.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-        originalRequest.headers['Authorization'] = `Bearer ${access_token}`;
-
-        processQueue(null, access_token);
+        // При успешном refresh бэкенд обновит куки автоматически
+        processQueue(null);
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
