@@ -45,8 +45,8 @@ def cleanup_node(host_config, is_manager=False, full_reset=False):
                     print(f"Удаление стека: {stack}")
                     run_ssh(host_config, f"docker stack rm {stack}", ignore_errors=True)
             
-            print("Ожидание удаления ресурсов стека (10с)...")
-            time.sleep(10)
+            print("Ожидание удаления ресурсов стека (15с)...")
+            time.sleep(15)
         
         # Удаление секретов
         secrets = run_ssh(host_config, "docker secret ls --format '{{.Name}}'", ignore_errors=True)
@@ -63,6 +63,10 @@ def cleanup_node(host_config, is_manager=False, full_reset=False):
                 if cfg:
                     print(f"Удаление конфига: {cfg}")
                     run_ssh(host_config, f"docker config rm {cfg}", ignore_errors=True)
+
+        # Удаление сетей (внешних)
+        print("Удаление сети app_network...")
+        run_ssh(host_config, "docker network rm app_network", ignore_errors=True)
     elif is_manager and not actual_manager:
         if in_swarm:
             print("Нода числится как менеджер в конфиге, но в Swarm она является воркером.")
@@ -76,14 +80,19 @@ def cleanup_node(host_config, is_manager=False, full_reset=False):
         print("Очистка builder cache...")
         run_ssh(host_config, "docker builder prune -af", ignore_errors=True)
     else:
-        print("Запуск легкой очистки Docker (system prune -f)...")
-        run_ssh(host_config, "docker system prune -f", ignore_errors=True)
+        prune_cmd = "docker system prune -f"
+        if "--volumes" in sys.argv:
+            print("Запуск очистки Docker с удалением вольюмов (system prune -f --volumes)...")
+            prune_cmd += " --volumes"
+        else:
+            print("Запуск легкой очистки Docker (system prune -f)...")
+        run_ssh(host_config, prune_cmd, ignore_errors=True)
+
+    if is_manager:
+        print("Удаление временных папок и файлов (/tmp/deploy, /tmp/infra, /tmp/portainer.yml)...")
+        run_ssh(host_config, "rm -rf /tmp/deploy /tmp/infra /tmp/portainer.yml", ignore_errors=True)
 
     if full_reset:
-        if is_manager:
-            print("Удаление временных папок и файлов (/tmp/deploy, /tmp/infra, /tmp/portainer.yml)...")
-            run_ssh(host_config, "rm -rf /tmp/deploy /tmp/infra /tmp/portainer.yml", ignore_errors=True)
-            
         if in_swarm:
             print("Выход из Docker Swarm...")
             if actual_manager:
