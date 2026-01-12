@@ -48,6 +48,12 @@ def run_ssh(host_config, command, input_data=None, stream=False):
 def scan_image(image_tag):
     """Сканирует образ на уязвимости с помощью trivy."""
     print(f"\n--- Сканирование образа {image_tag} ---")
+    
+    # Добавляем путь к Scoop shims в PATH, если он там отсутствует
+    scoop_shims = os.path.expanduser("~/scoop/shims")
+    if os.path.exists(scoop_shims) and scoop_shims not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = scoop_shims + os.pathsep + os.environ.get("PATH", "")
+
     try:
         # Проверяем, установлен ли trivy
         subprocess.run(["trivy", "--version"], capture_output=True, check=True)
