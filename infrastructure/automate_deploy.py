@@ -207,7 +207,7 @@ def setup_secrets(manager_config, config):
             continue
             
         print(f" Создание секрета {name}...")
-        create_cmd = f"echo '{value}' | docker secret create {name} -"
+        create_cmd = f"printf '{value}' | docker secret create {name} -"
         run_ssh(manager_config, create_cmd)
 
 def main():
@@ -385,8 +385,8 @@ def main():
         f"export DB_USER='{config.get('db_user', 'postgres')}' && "
         f"export DB_PASSWORD='{config.get('db_password', 'postgres')}' && "
         f"export DB_NAME='{config.get('db_name', 'postgres')}' && "
-        f"export PGADMIN_EMAIL='{config.get('pgadmin_email', 'admin@admin.com')}' && "
-        f"export PGADMIN_PASSWORD='{config.get('pgadmin_password', 'admin_password_123')}'"
+        f"export PGADMIN_DEFAULT_EMAIL='{config.get('pgadmin_email', 'admin@admin.com')}' && "
+        f"export PGADMIN_DEFAULT_PASSWORD='{config.get('pgadmin_password', 'admin_password_123')}'"
     )
     
     deploy_infra_cmd = f"cd {infra_dir} && {env_vars} && docker stack deploy -c infrastructure.yml {stack_name}"
