@@ -135,7 +135,7 @@ services:
     image: dpage/pgadmin4:latest
     user: root
     environment:
-      - PGADMIN_DEFAULT_EMAIL_FILE=/run/secrets/pgadmin_email
+      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL:-admin@admin.com}
       - PGADMIN_DEFAULT_PASSWORD_FILE=/run/secrets/pgadmin_password
       - PGADMIN_CONFIG_CONSOLE_LOG_LEVEL=10
       - PGADMIN_SERVER_JSON_FILE=/pgadmin4/servers.json
@@ -143,10 +143,7 @@ services:
       - PGADMIN_LISTEN_ADDRESS=0.0.0.0
       - PGADMIN_DISABLE_POSTFIX=True # Disable postfix to avoid permission issues if not needed
     secrets:
-      - source: pgadmin_email
-        target: pgadmin_email
-      - source: pgadmin_password
-        target: pgadmin_password
+      - pgadmin_password
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     # ports:
@@ -176,8 +173,6 @@ secrets:
   db_password:
     external: true
   db_name:
-    external: true
-  pgadmin_email:
     external: true
   pgadmin_password:
     external: true
