@@ -54,7 +54,7 @@ class Settings(BaseSettings):
         "http://85.198.86.165"
     ]
 
-    DEBUG: bool = True
+    DEBUG: bool = False
     
     model_config = SettingsConfigDict(case_sensitive=True, env_file=".env")
 
