@@ -17,6 +17,14 @@ scrape_configs:
         job: varlogs
         __path__: /var/log/*log
 
+  - job_name: traefik
+    static_configs:
+    - targets:
+        - localhost
+      labels:
+        job: traefik-access
+        __path__: /var/log/traefik/access.log
+
   - job_name: containers
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
