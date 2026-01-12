@@ -394,29 +394,62 @@ def main():
 
     # 11. Мониторинг (Portainer)
     print("\n--- Шаг 9: Установка Portainer ---")
-    portainer_url = "https://raw.githubusercontent.com/portainer/portainer-compose/master/docker-stack.yml"
-    # Проверяем, не запущен ли уже portainer
-    # Используем grep для совместимости, так как --filter может не поддерживаться в некоторых версиях docker stack ls
-    exists = run_ssh(manager, "docker stack ls --format '{{.Name}}' | grep -w portainer")
-    if not exists:
-        # Скачиваем, исправляем образ на portainer-ce, изолируем сеть и убираем --tlsskipverify
-        # Добавляем метки для Traefik и подключаем к внешней сети app_network
-        portainer_cmd = (
-            f"curl -L {portainer_url} -o /tmp/portainer.yml && "
-            f"sed -i 's/portainer\\/portainer/portainer\\/portainer-ce/g' /tmp/portainer.yml && "
-            f"sed -i '/agent_network:/,/driver: overlay/ s/driver: overlay/driver: overlay\\n    internal: true\\n    attachable: false/' /tmp/portainer.yml && "
-            f"sed -i 's/--tlsskipverify//g' /tmp/portainer.yml && "
-            # Добавление labels для Traefik
-            f"sed -i '/portainer:/a \\    networks:\\n      - app_network\\n      - agent_network\\n    deploy:\\n      labels:\\n        - \"traefik.enable=true\"\\n        - \"traefik.http.routers.portainer.rule=Host(`portainer.tryout.site`)\"\\n        - \"traefik.http.routers.portainer.entrypoints=websecure\"\\n        - \"traefik.http.routers.portainer.tls.certresolver=myresolver\"\\n        - \"traefik.http.services.portainer.loadbalancer.server.port=9000\"' /tmp/portainer.yml && "
-            # Добавление внешней сети app_network в список сетей в конце файла
-            f"sed -i '$ a \\\\nnetworks:\\n  app_network:\\n    external: true' /tmp/portainer.yml && "
-            f"grep -q 'services:' /tmp/portainer.yml && "
-            f"docker stack deploy -c /tmp/portainer.yml portainer"
-        )
-        run_ssh(manager, portainer_cmd)
-        print("Команда деплоя Portainer (CE) с Traefik labels, изоляцией сети и hardening оправлена")
-    else:
-        print("Стек Portainer уже запущен")
+    portainer_yml_content = """version: '3.2'
+
+services:
+  agent:
+    image: portainer/agent:latest
+    environment:
+      AGENT_CLUSTER_ADDR: tasks.agent
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      - agent_network
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    command: -H tcp://tasks.agent:9001
+    volumes:
+      - portainer_data:/data
+    networks:
+      - agent_network
+      - app_network
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+      labels:
+        - "traefik.enable=true"
+        - "traefik.http.routers.portainer.rule=Host(`portainer.tryout.site`)"
+        - "traefik.http.routers.portainer.entrypoints=websecure"
+        - "traefik.http.routers.portainer.tls.certresolver=myresolver"
+        - "traefik.http.services.portainer.loadbalancer.server.port=9000"
+        - "traefik.docker.network=app_network"
+        # Redirect HTTP to HTTPS
+        - "traefik.http.routers.portainer-http.rule=Host(`portainer.tryout.site`)"
+        - "traefik.http.routers.portainer-http.entrypoints=web"
+        - "traefik.http.routers.portainer-http.middlewares=https-redirect@docker"
+
+networks:
+  agent_network:
+    driver: overlay
+    internal: true
+  app_network:
+    external: true
+
+volumes:
+  portainer_data:
+"""
+    # Всегда обновляем файл конфигурации и деплоим
+    run_ssh(manager, f"cat > /tmp/portainer.yml", input_data=portainer_yml_content)
+    run_ssh(manager, "docker stack deploy -c /tmp/portainer.yml portainer")
+    print("Стек Portainer (CE) с Traefik labels развернут/обновлен")
     
     print("\n=== Деплой успешно завершен! ===")
     print(f"Инфраструктура запущена.")
