@@ -1,0 +1,84 @@
+services:
+  backend:
+    build:
+      context: ./services/backend
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+    volumes:
+      - ./services/backend:/app
+    networks:
+      - common-network
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/postgres
+      - DB_HOST=db
+      - DB_USER=postgres
+      - DB_PASSWORD=postgres
+      - DB_NAME=postgres
+      - SECRET_KEY=secret-key
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  frontend:
+    build:
+      context: ./services/frontend
+      dockerfile: Dockerfile.dev
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+    volumes:
+      - ./services/frontend:/app
+      - /app/node_modules
+    networks:
+      - common-network
+    environment:
+      - NEXT_PUBLIC_API_URL=http://localhost:8000/api
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - backend
+    command: npm run dev -- --webpack -p 3000 -H 0.0.0.0
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
+    ports:
+      - "5432:5432"
+    networks:
+      - common-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  adminer:
+    image: adminer
+    restart: unless-stopped
+    depends_on:
+      - db
+    ports:
+      - "8089:8080"
+    networks:
+      - common-network
+
+  redis:
+    image: valkey/valkey:8.0-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - common-network
+
+networks:
+  common-network:
+    driver: bridge
