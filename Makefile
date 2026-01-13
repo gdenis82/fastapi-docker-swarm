@@ -1,6 +1,6 @@
 COMPOSE_DEV = docker-compose -f docker-compose.dev.yml
 
-.PHONY: up down build restart logs ps shell-backend shell-frontend migrate test clean help
+.PHONY: up down build restart logs ps shell-backend shell-frontend migrate test clean help run-backend
 
 help:
 	@echo "Доступные команды:"
@@ -14,6 +14,7 @@ help:
 	@echo "  make shell-frontend - Зайти в терминал контейнера фронтенда"
 	@echo "  make migrate        - Применить миграции базы данных"
 	@echo "  make test           - Запустить тесты бэкенда"
+	@echo "  make run-backend    - Запустить бэкенд локально (без Docker)"
 	@echo "  make clean          - Удалить неиспользуемые Docker ресурсы"
 
 up:
@@ -45,6 +46,23 @@ migrate:
 
 test:
 	$(COMPOSE_DEV) exec backend pytest
+
+run-backend:
+	@powershell -Command " \
+		if (Get-Command uv -ErrorAction SilentlyContinue) { \
+			Write-Host 'Using uv to run backend...'; \
+			cd services/backend; uv run --active uvicorn app.main:app --reload; \
+		} elseif (Test-Path 'services/backend/.venv') { \
+			Write-Host 'Using local venv in services/backend/.venv'; \
+			cd services/backend; .\.venv\Scripts\uvicorn app.main:app --reload; \
+		} elseif (Test-Path '.venv') { \
+			Write-Host 'Using shared venv in .venv'; \
+			cd services/backend; ..\..\.venv\Scripts\uvicorn app.main:app --reload; \
+		} else { \
+			Write-Host 'uv not found and no virtual environment found in services/backend/.venv or .venv.'; \
+			Write-Host 'Please install uv or create a virtual environment.'; \
+			exit 1; \
+		}"
 
 clean:
 	docker system prune -f
