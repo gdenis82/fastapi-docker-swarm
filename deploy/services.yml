@@ -104,7 +104,7 @@ services:
         - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
         - "traefik.http.middlewares.security-headers.headers.frameDeny=false"
         - "traefik.http.middlewares.security-headers.headers.customFrameOptionsValue=SAMEORIGIN"
-        - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; font-src 'self'; connect-src 'self' https://grafana.com https://cdn.jsdelivr.net; frame-ancestors 'self' https://tryout.site https://pgadmin.tryout.site;"
+        - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com https://www.gravatar.com; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://grafana.com https://cdn.jsdelivr.net; frame-ancestors 'self' https://tryout.site https://pgadmin.tryout.site;"
         - "traefik.http.middlewares.security-headers.headers.accessControlAllowMethods=GET,OPTIONS,PUT,POST,DELETE"
         - "traefik.http.middlewares.security-headers.headers.accessControlAllowHeaders=*"
         - "traefik.http.middlewares.security-headers.headers.accessControlAllowOriginList=https://tryout.site,https://grafana.tryout.site,https://pgadmin.tryout.site"
