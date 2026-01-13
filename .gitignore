@@ -1,0 +1,7 @@
+/.venv/
+.idea/
+/inventory.json
+/infrastructure/inventory.json
+/services/backend/.env
+/services/backend/venv/
+/services/backend/.venv/
