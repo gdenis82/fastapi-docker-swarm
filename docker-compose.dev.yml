@@ -41,8 +41,6 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000/api
       - WATCHPACK_POLLING=true
-    depends_on:
-      - backend
     command: npm run dev -- --webpack -p 3000 -H 0.0.0.0
 
   db:
