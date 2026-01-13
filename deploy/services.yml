@@ -55,7 +55,14 @@ services:
       replicas: 2
       labels:
         - "traefik.enable=true"
-        - "traefik.http.routers.backend.rule=Host(`tryout.site`) && (PathPrefix(`/api`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`))"
+        - "traefik.http.routers.backend.rule=Host(`tryout.site`) && (PathPrefix(`/api`) || PathPrefix(`/openapi.json`))"
+        - "traefik.http.routers.docs-redirect.rule=Host(`tryout.site`) && Path(`/docs`)"
+        - "traefik.http.routers.docs-redirect.entrypoints=websecure"
+        - "traefik.http.routers.docs-redirect.tls.certresolver=myresolver"
+        - "traefik.http.routers.docs-redirect.middlewares=docs-redirect"
+        - "traefik.http.middlewares.docs-redirect.redirectregex.regex=^https://tryout.site/docs(.*)"
+        - "traefik.http.middlewares.docs-redirect.redirectregex.replacement=https://tryout.site/api/docs$${1}"
+        - "traefik.http.middlewares.docs-redirect.redirectregex.permanent=true"
         - "traefik.http.routers.backend.entrypoints=websecure"
         - "traefik.http.routers.backend.tls.certresolver=myresolver"
         - "traefik.http.routers.backend.middlewares=security-headers"
@@ -96,7 +103,7 @@ services:
         - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
         - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
         - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
-        - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self';"
+        - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; font-src 'self'; connect-src 'self';"
       placement:
         max_replicas_per_node: 1
         constraints:
