@@ -113,6 +113,29 @@ def build_and_push(service_name, context_path, registry, image_name, build_args=
     
     return image_tag
 
+def check_local_insecure_registry(registry):
+    print(f"Проверка локальной конфигурации Docker для {registry}...")
+    try:
+        result = subprocess.run(
+            ["docker", "info", "--format", "{{json .RegistryConfig.InsecureRegistryCIDRs}}"],
+            capture_output=True, text=True, check=True
+        )
+        insecure_registries = json.loads(result.stdout)
+        
+        # Registry может быть IP:PORT, а в списке могут быть CIDR или просто IP:PORT
+        if registry not in insecure_registries:
+            print(f"\n ПРЕДУПРЕЖДЕНИЕ: {registry} не найден в списке insecure-registries вашего локального Docker.")
+            print(" Без этого 'docker push' может завершиться ошибкой.")
+            print(" Пожалуйста, добавьте его в настройки Docker Desktop (Settings -> Docker Engine):")
+            print(f' "insecure-registries": ["{registry}"]')
+            print(" И перезапустите Docker.")
+            
+            confirm = input("\nВы уже настроили это или хотите продолжить на свой страх и риск? (y/n): ")
+            if confirm.lower() != 'y':
+                sys.exit(1)
+    except Exception as e:
+        print(f"Не удалось проверить локальные настройки Docker: {e}")
+
 def main():
     # Поиск inventory.json в текущей директории или в директории infrastructure
     inventory_path = "infrastructure/inventory.json"
@@ -129,6 +152,9 @@ def main():
     manager = config["manager"]
     registry = config["registry"]
     stack_name = config["stack_name"]
+    
+    # Проверка локальной конфигурации
+    check_local_insecure_registry(registry)
     
     # 1. Сборка и Push Бэкенда
     backend_image = build_and_push("Backend", "services/backend", registry, "backend")
