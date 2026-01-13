@@ -245,7 +245,7 @@ def main():
     print("\n=== Обновление сервисов завершено ===")
     print(f"Приложение должно быть доступно по адресу: https://tryout.site")
     print(f"API доступно по адресу: https://tryout.site/api")
-    print(f"Документация: https://tryout.site/docs")
+    print(f"Документация: https://tryout.site/api/docs")
 
 if __name__ == "__main__":
     main()
