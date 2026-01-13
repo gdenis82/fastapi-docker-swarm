@@ -360,6 +360,10 @@ def main():
     }
     servers_json_content = json.dumps(pgadmin_servers, indent=4)
 
+    # Важно: для pgAdmin 8.x+ файл должен иметь права на чтение для пользователя pgadmin (uid 5050 или root)
+    # и pgadmin ожидает файл по пути /pgadmin4/servers.json
+    # Мы создаем конфиг через docker config, он монтируется с правами 0444 по умолчанию.
+
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     # Подставляем версию конфига прямо в текст YAML, так как Swarm не поддерживает переменные в именах ключей configs
     infra_compose = infra_compose.replace("${SERVERS_VERSION:-v1}", timestamp)
