@@ -82,7 +82,7 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=/api
     deploy:
-      replicas: 2
+      replicas: 1
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.frontend.rule=Host(`tryout.site`)"
@@ -105,9 +105,8 @@ services:
         - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
         - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; font-src 'self'; connect-src 'self';"
       placement:
-        max_replicas_per_node: 1
         constraints:
-          - "node.labels.type == worker"
+          - "node.role == manager"
       update_config:
         parallelism: 1
         order: stop-first
