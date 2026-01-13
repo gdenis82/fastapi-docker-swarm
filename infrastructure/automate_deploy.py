@@ -178,8 +178,9 @@ def setup_insecure_registry(host_config, registry_ip):
         # Экранируем одинарные кавычки для shell
         escaped_content = new_content.replace("'", "'\\''")
         write_cmd = f"echo '{escaped_content}' | sudo tee {daemon_json_path} > /dev/null && sudo systemctl restart docker"
+        print(f" Выполнение команды на {host_config['ip']}: {write_cmd}")
         run_ssh(host_config, write_cmd)
-        print(f" Registry {registry_ip} добавлен в insecure-registries на {host_config['ip']}")
+        print(f" Registry {registry_ip} добавлен в insecure-registries на {host_config['ip']} и Docker перезапущен")
     else:
         print(f" Registry {registry_ip} уже в списке на {host_config['ip']}")
 
