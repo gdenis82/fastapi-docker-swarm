@@ -113,6 +113,7 @@ python update_services.py
 
 - **Frontend**: `https://tryout.site`
 - **Backend API**: `https://tryout.site/api`
+- **Documentation**: `https://tryout.site/api/docs`
 - **Grafana**: `https://grafana.tryout.site` (порт 3000 закрыт для прямого доступа)
 - **pgAdmin**: `https://pgadmin.tryout.site` (порт 8080 закрыт для прямого доступа)
 - **Portainer**: `https://portainer.tryout.site` (порт 9000 закрыт для прямого доступа)
