@@ -73,9 +73,20 @@ def cleanup_node(host_config, is_manager=False, full_reset=False):
         else:
             print("Нода не в Swarm, пропуск удаления ресурсов Swarm.")
 
+    # Принудительная остановка и удаление всех контейнеров
+    if full_reset:
+        print("Принудительное удаление всех контейнеров...")
+        run_ssh(host_config, "docker rm -f $(docker ps -aq)", ignore_errors=True)
+        
+        print("Удаление всех Docker образов...")
+        run_ssh(host_config, "docker rmi -f $(docker images -aq)", ignore_errors=True)
+
+        print("Удаление всех Docker вольюмов...")
+        run_ssh(host_config, "docker volume rm $(docker volume ls -q)", ignore_errors=True)
+
     # Очистка системы (удаление остановленных контейнеров, неиспользуемых сетей)
     if full_reset:
-        print("Запуск полной очистки Docker (system prune -af)...")
+        print("Запуск полной очистки Docker (system prune -af --volumes)...")
         run_ssh(host_config, "docker system prune -af --volumes", ignore_errors=True)
         print("Очистка builder cache...")
         run_ssh(host_config, "docker builder prune -af", ignore_errors=True)
@@ -89,10 +100,17 @@ def cleanup_node(host_config, is_manager=False, full_reset=False):
         run_ssh(host_config, prune_cmd, ignore_errors=True)
 
     if is_manager:
-        print("Удаление временных папок и файлов (/tmp/deploy, /tmp/infra, /tmp/portainer.yml)...")
-        run_ssh(host_config, "rm -rf /tmp/deploy /tmp/infra /tmp/portainer.yml", ignore_errors=True)
+        print("Удаление временных папок и файлов (/tmp/deploy, /tmp/infra, /tmp/portainer.yml, /root/registry)...")
+        run_ssh(host_config, "rm -rf /tmp/deploy /tmp/infra /tmp/portainer.yml /root/registry", ignore_errors=True)
 
     if full_reset:
+        print("Сброс Firewall (UFW) к состоянию по умолчанию...")
+        run_ssh(host_config, "sudo ufw --force reset && sudo ufw default deny incoming && sudo ufw default allow outgoing", ignore_errors=True)
+        
+        print("Очистка /etc/docker/daemon.json (удаление insecure-registries)...")
+        # Возвращаем пустой конфиг или удаляем ключи. Самый простой способ - записать {}
+        run_ssh(host_config, "echo '{}' | sudo tee /etc/docker/daemon.json > /dev/null && sudo systemctl restart docker", ignore_errors=True)
+
         if in_swarm:
             print("Выход из Docker Swarm...")
             if actual_manager:
