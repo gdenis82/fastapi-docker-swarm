@@ -82,7 +82,7 @@ services:
     environment:
       - NEXT_PUBLIC_API_URL=/api
     deploy:
-      replicas: 1
+      replicas: 2
       labels:
         - "traefik.enable=true"
         - "traefik.http.routers.frontend.rule=Host(`tryout.site`)"
@@ -103,18 +103,14 @@ services:
         - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
         - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
         - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
-        - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; font-src 'self'; connect-src 'self';"
+        - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Content-Security-Policy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; img-src 'self' data: https://fastapi.tiangolo.com; font-src 'self'; connect-src 'self';"
         - "traefik.http.middlewares.security-headers.headers.accessControlAllowMethods=GET,OPTIONS,PUT,POST,DELETE"
         - "traefik.http.middlewares.security-headers.headers.accessControlAllowHeaders=*"
         - "traefik.http.middlewares.security-headers.headers.accessControlAllowOriginList=https://tryout.site,https://grafana.tryout.site,https://pgadmin.tryout.site"
         - "traefik.http.middlewares.security-headers.headers.accessControlMaxAge=100"
         - "traefik.http.middlewares.security-headers.headers.addVaryHeader=true"
       placement:
-        constraints:
-          - "node.role == manager"
-      update_config:
-        parallelism: 1
-        order: stop-first
+        max_replicas_per_node: 1
       restart_policy:
         condition: on-failure
     healthcheck:
