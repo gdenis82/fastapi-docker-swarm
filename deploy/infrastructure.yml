@@ -155,9 +155,9 @@ services:
       - pgadmin_password
     volumes:
       - pgadmin_data:/var/lib/pgadmin
-    # configs:
-    #   - source: pgadmin_servers_${SERVERS_VERSION:-v1}
-    #     target: /pgadmin4/servers.json
+    configs:
+      - source: pgadmin_servers_${SERVERS_VERSION:-v1}
+        target: /pgadmin4/servers.json
     deploy:
       labels:
         - "traefik.enable=true"
