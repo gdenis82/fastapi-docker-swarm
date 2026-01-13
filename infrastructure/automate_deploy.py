@@ -435,7 +435,8 @@ services:
         # Redirect HTTP to HTTPS
         - "traefik.http.routers.portainer-http.rule=Host(`portainer.tryout.site`)"
         - "traefik.http.routers.portainer-http.entrypoints=web"
-        - "traefik.http.routers.portainer-http.middlewares=https-redirect@docker"
+        - "traefik.http.routers.portainer-http.middlewares=portainer-https-redirect"
+        - "traefik.http.middlewares.portainer-https-redirect.redirectscheme.scheme=https"
 
 networks:
   agent_network:
