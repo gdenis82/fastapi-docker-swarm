@@ -74,7 +74,7 @@ def setup_firewall(host_config, cluster_ips, is_manager=False):
         return
 
     # Общедоступные порты
-    public_ports = ["22", "80", "443", "8080", "9000"]
+    public_ports = ["22", "80", "443", "8080", "9000", "3000"]
     # Порты Swarm и Registry (только для внутреннего использования в кластере)
     internal_tcp_ports = ["2376", "2377", "7946", "5000"]
     internal_udp_ports = ["7946", "4789"]
