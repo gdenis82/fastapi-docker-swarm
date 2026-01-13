@@ -25,6 +25,9 @@ export function AuthInitializer({ children }: { children: React.ReactNode }) {
         setAuth(response.data);
       } catch (error: any) {
         console.error('Failed to initialize auth:', error.response?.status, error.message);
+        if (error.response?.status === 401) {
+          Cookies.remove('token');
+        }
         setLoading(false);
       }
     };
