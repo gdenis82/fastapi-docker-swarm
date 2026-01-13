@@ -44,9 +44,16 @@ def create_app() -> FastAPI:
             # Redirecting to the same URL but with https
             url = request.url.replace(scheme="https")
             from fastapi.responses import RedirectResponse
-            return RedirectResponse(url, status_code=301)
+            return RedirectResponse(url, status_code=307)
         
         return await call_next(request)
+
+    @app.middleware("http")
+    async def hsts_clearing_middleware(request: Request, call_next):
+        response = await call_next(request)
+        if settings.DEBUG:
+            response.headers["Strict-Transport-Security"] = "max-age=0"
+        return response
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
